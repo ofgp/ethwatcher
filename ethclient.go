@@ -29,8 +29,6 @@ import (
 	"sync"
 	"time"
 
-	"dgateway/log"
-
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -54,7 +52,7 @@ func init() {
 
 var (
 	voteAbi, _ = abi.JSON(strings.NewReader(GatewayVoteABI))
-	ewLogger   = log.New(viper.GetString("loglevel"), "ethwatcher")
+	ewLogger   = NewLogger(viper.GetString("loglevel"), "ethwatcher")
 )
 
 // Client defines typed wrappers for the Ethereum RPC API.
