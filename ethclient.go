@@ -1229,13 +1229,10 @@ func (ec *Client) doSendTxByInput(input []byte, opts *bind.TransactOpts) (sTxHas
 		ewLogger.Error("ethwatcher send tx, suggest gas price error!", "error", err.Error())
 		return "", err
 	}
-	var minGasPrice = new(big.Int).SetInt64(10000000000)
-	var maxGasPrice = new(big.Int).SetInt64(20000000000)
+	var minGasPrice = new(big.Int).SetInt64(1000000000)
 	if gasPrice.Cmp(minGasPrice) < 0 {
 		gasPrice = minGasPrice
 
-	} else if gasPrice.Cmp(maxGasPrice) > 0 {
-		gasPrice = maxGasPrice
 	}
 
 	// Gas estimation cannot succeed without code for method invocations
