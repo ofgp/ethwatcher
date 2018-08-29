@@ -49,14 +49,14 @@ func init() {
 	viper.SetDefault("LEVELDB.ew_nonce_db_path", "./nonceStore")
 	viper.SetDefault("ETHWATCHER.vote_contract", "")
 	viper.SetDefault("ETHWATCHER.min_gasprice", 1000000000)
-	viper.SetDefault("ETHWATCHER.max_gasprice", 1000000000)
+	viper.SetDefault("ETHWATCHER.max_gasprice", 80000000000)
 }
 
 var (
 	voteAbi, _  = abi.JSON(strings.NewReader(GatewayVoteABI))
 	ewLogger    = NewLogger("debug", "ethwatcher")
 	minGasPrice = new(big.Int).SetInt64(1000000000)
-	maxGasPrice = new(big.Int).SetInt64(1000000000)
+	maxGasPrice = new(big.Int).SetInt64(80000000000)
 )
 
 // Client defines typed wrappers for the Ethereum RPC API.
