@@ -56,7 +56,6 @@ type ExtraBurnData struct { // TOKEN_METHOD_BURN
 	To           string // the chain that this event will go to
 	TokenFrom    uint32 // the code of the app which created this event
 	TokenTo      uint32 // the code of the token that this event will go to
-	Fee          uint64
 }
 
 type ExtraMintData struct { // VOTE_METHOD_MINT
@@ -178,9 +177,6 @@ const (
 	VOTE_EVENT_APPADDED      = "AppAdded"
 	VOTE_EVENT_APPREMOVED    = "AppRemoved"
 	VOTE_EVENT_CHANGEGATEWAY = "GatewayAddrChanged"
-
-	BURN_ASSET_ITEM_SPLITER  = "#"
-	BURN_ASSET_VALUE_SPLITER = "$"
 )
 ```
 
