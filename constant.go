@@ -59,7 +59,4 @@ const (
 	VOTE_EVENT_APPADDED      = "AppAdded"
 	VOTE_EVENT_APPREMOVED    = "AppRemoved"
 	VOTE_EVENT_CHANGEGATEWAY = "GatewayAddrChanged"
-
-	BURN_ASSET_ITEM_SPLITER  = "#"
-	BURN_ASSET_VALUE_SPLITER = "$"
 )

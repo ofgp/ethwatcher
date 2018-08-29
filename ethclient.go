@@ -384,29 +384,10 @@ func (ec *Client) parseBurnTx(tx *rpcTx, method *abi.Method) (*PushEvent, error)
 	extraData.To = nApp.Chain
 	extraData.TokenTo = nApp.TokenCode
 	extraData.TokenFrom = nApp.AppCode
-	extraData.Fee = args.Fee
 	extraData.Amount = args.Wad
 
-	sSlice := strings.Split(args.DstDescribe, BURN_ASSET_ITEM_SPLITER)
-	var recharges []*AssetInfo
-	remainB := args.Wad - args.Fee
-	if remainB <= args.Wad {
-		for _, ss := range sSlice {
-			items := strings.Split(ss, BURN_ASSET_VALUE_SPLITER)
-			value, _ := hexutil.DecodeUint64(items[1])
-			remainA := remainB - value
-			if remainA <= remainB {
-				recharge := AssetInfo{Amount: value, Address: items[0]}
-				recharges = append(recharges, &recharge)
-				remainB = remainA
-			} else {
-				ewLogger.Warn(fmt.Sprintf("invalid AssetInfo, txHash is %v", tx.TxHash.Hex()))
-			}
-		}
-	} else {
-		ewLogger.Warn(fmt.Sprintf("invalid fee, txHash is %v", tx.TxHash.Hex()))
-	}
-	extraData.RechargeList = recharges
+	recharge := AssetInfo{Amount: args.Wad, Address: args.Receiver}
+	extraData.RechargeList = []*AssetInfo{&recharge}
 
 	return &PushEvent{
 		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
@@ -1640,9 +1621,8 @@ func createTxInfo(tx *rpcTx, r *types.Receipt) *TxInfo {
 }
 
 type burnCallArguments struct {
-	Wad         uint64
-	DstDescribe string
-	Fee         uint64
+	Wad      uint64
+	Receiver string
 }
 
 type rpcTx struct {
