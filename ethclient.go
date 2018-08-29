@@ -48,11 +48,15 @@ import (
 func init() {
 	viper.SetDefault("LEVELDB.ew_nonce_db_path", "./nonceStore")
 	viper.SetDefault("ETHWATCHER.vote_contract", "")
+	viper.SetDefault("ETHWATCHER.min_gasprice", 1000000000)
+	viper.SetDefault("ETHWATCHER.max_gasprice", 1000000000)
 }
 
 var (
-	voteAbi, _ = abi.JSON(strings.NewReader(GatewayVoteABI))
-	ewLogger   = NewLogger(viper.GetString("loglevel"), "ethwatcher")
+	voteAbi, _  = abi.JSON(strings.NewReader(GatewayVoteABI))
+	ewLogger    = NewLogger("debug", "ethwatcher")
+	minGasPrice = new(big.Int).SetInt64(1000000000)
+	maxGasPrice = new(big.Int).SetInt64(1000000000)
 )
 
 // Client defines typed wrappers for the Ethereum RPC API.
@@ -97,6 +101,11 @@ func NewClient(c *rpc.Client, confirmHeight int64, sPub string) (ec *Client, err
 	if err != nil {
 		return nil, err
 	}
+
+	ewLogger = NewLogger(viper.GetString("loglevel"), "ethwatcher")
+	minGasPrice.SetInt64(viper.GetInt64("ETHWATCHER.min_gasprice"))
+	maxGasPrice.SetInt64(viper.GetInt64("ETHWATCHER.max_gasprice"))
+
 	ec = &Client{
 		nonceLock:        new(sync.Mutex),
 		c:                c,
@@ -1210,10 +1219,11 @@ func (ec *Client) doSendTxByInput(input []byte, opts *bind.TransactOpts) (sTxHas
 		ewLogger.Error("ethwatcher send tx, suggest gas price error!", "error", err.Error())
 		return "", err
 	}
-	var minGasPrice = new(big.Int).SetInt64(1000000000)
 	if gasPrice.Cmp(minGasPrice) < 0 {
 		gasPrice = minGasPrice
 
+	} else if gasPrice.Cmp(maxGasPrice) > 0 {
+		gasPrice = maxGasPrice
 	}
 
 	// Gas estimation cannot succeed without code for method invocations
