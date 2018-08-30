@@ -981,6 +981,23 @@ func (ec *Client) StartWatch(start big.Int, tranxIx int, eventCh chan<- *PushEve
 					tranxIx = 0
 				}
 				ec.pushTranxEvent(&blockInfo.Transactions, tranxIx, eventCh)
+
+				mockTx := &TxInfo{
+					BlockNumber: blkHeight,
+					TxIndex:     int(len(blockInfo.Transactions)),
+				}
+
+				blockDoneEvent := &PushEvent{
+					Operation:     new(big.Int).SetInt64(0),
+					Tx:            mockTx,
+					Confirmations: int64(0),
+					Method:        BLOCK_DONE_METHOD,
+					Events:        uint64(0),
+				}
+				select {
+				case eventCh <- blockDoneEvent:
+					ewLogger.Debug("ethwatcher block push done", "height", blkHeight.Uint64())
+				}
 			}
 		}
 	}()

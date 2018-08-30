@@ -30,6 +30,8 @@ const (
 const (
 	CHAIN_SELF_ETH = "eth"
 
+	BLOCK_DONE_METHOD = "blockPushDone"
+
 	VOTE_METHOD_MINT = "mintByGateway"
 	// VOTE_METHOD_BURN          = "burnForGateway"
 	VOTE_METHOD_STOP          = "stop"
