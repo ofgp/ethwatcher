@@ -25,6 +25,8 @@ type PushEvent struct {
 
 	Tx *TxInfo
 
+	Confirmations int64
+
 	Method string // specify which ExtraData struct type should this event to use.
 	Events uint64 // tx log flags. see constant.go -> VOTE_TX_*
 

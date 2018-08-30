@@ -36,7 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/crypto/sha3"
+	// "github.com/ethereum/go-ethereum/crypto/sha3"
 	"github.com/ethereum/go-ethereum/ethdb"
 	// "github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -110,7 +110,7 @@ func NewClient(c *rpc.Client, confirmHeight int64, sPub string) (ec *Client, err
 		nonceLock:        new(sync.Mutex),
 		c:                c,
 		confirmHeight:    new(big.Int).SetInt64(confirmHeight),
-		currentHeight:    new(big.Int),
+		currentHeight:    new(big.Int).SetInt64(0),
 		ldb:              ldb,
 		mapAppAddrToCode: new(sync.Map),
 		mapAppCodeToInfo: new(sync.Map),
@@ -142,18 +142,15 @@ func (ec *Client) ReviewBlock(start big.Int, ch chan<- *big.Int) {
 	if err != nil {
 		panic("ethwatcher ReviewBlock, get current height error!")
 	}
+	ec.currentHeight = cur
+
 	curConfirm := new(big.Int).Sub(cur, ec.confirmHeight)
-	// ctx := ensureContext(nil)
 	increaser := big.NewInt(1)
 	go func() {
 		for i := &start; i.Cmp(curConfirm) <= 0; i = new(big.Int).Add(i, increaser) {
-			ch <- i
-			// blockInfo, err := ec.HeaderByNumber(ctx, i)
-			// if err == nil {
-			// 	ch <- blockInfo
-			// } else {
-			// 	ewLogger.Error("ethwatcher ReviewBlock, get block header error", "error", err.Error())
-			// }
+			select {
+			case ch <- i:
+			}
 		}
 	}()
 }
@@ -172,15 +169,21 @@ func (ec *Client) StartWatchBlock(start big.Int, heightCh chan<- *big.Int) {
 		for {
 			select {
 			case blockHeight := <-rCh:
-				heightCh <- blockHeight
+				select {
+				case heightCh <- blockHeight:
+				}
 			default:
 				select {
 				case blockHeight := <-rCh:
-					heightCh <- blockHeight
+					select {
+					case heightCh <- blockHeight:
+					}
 				case blockHeader := <-wCh:
 					bigIntNumber := (*big.Int)(blockHeader.Number)
 					if bigIntNumber.Cmp(ec.currentHeight) > 0 {
-						heightCh <- new(big.Int).Sub(bigIntNumber, bigConfirmH)
+						select {
+						case heightCh <- new(big.Int).Sub(bigIntNumber, bigConfirmH):
+						}
 						ec.currentHeight = bigIntNumber
 					}
 				case err := <-sub.Err():
@@ -366,11 +369,16 @@ func (ec *Client) parseBurnTx(tx *rpcTx, method *abi.Method) (*PushEvent, error)
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseBurnTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	var extraData ExtraBurnData
@@ -399,11 +407,12 @@ func (ec *Client) parseBurnTx(tx *rpcTx, method *abi.Method) (*PushEvent, error)
 	extraData.RechargeList = []*AssetInfo{&recharge}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    ec.parseTxEventStatus(tx, r),
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -418,19 +427,25 @@ func (ec *Client) parseMintTx(tx *rpcTx, method *abi.Method) (*PushEvent, error)
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseMintTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    ec.parseTxEventStatus(tx, r),
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -445,19 +460,25 @@ func (ec *Client) parseStartTx(tx *rpcTx, method *abi.Method) (*PushEvent, error
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseStartTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    ec.parseTxEventStatus(tx, r),
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -472,19 +493,25 @@ func (ec *Client) parseStopTx(tx *rpcTx, method *abi.Method) (*PushEvent, error)
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseStopTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    ec.parseTxEventStatus(tx, r),
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -499,19 +526,25 @@ func (ec *Client) parseRevokeTx(tx *rpcTx, method *abi.Method) (*PushEvent, erro
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseRevokeTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    ec.parseTxEventStatus(tx, r),
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -526,11 +559,16 @@ func (ec *Client) parseAddAppTx(tx *rpcTx, method *abi.Method) (*PushEvent, erro
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseAddAppTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	eventS := ec.parseTxEventStatus(tx, r)
@@ -579,11 +617,12 @@ func (ec *Client) parseAddAppTx(tx *rpcTx, method *abi.Method) (*PushEvent, erro
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    eventS,
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        eventS,
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -598,11 +637,16 @@ func (ec *Client) parseRemoveAppTx(tx *rpcTx, method *abi.Method) (*PushEvent, e
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseRemoveAppTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	eventS := ec.parseTxEventStatus(tx, r)
@@ -621,11 +665,12 @@ func (ec *Client) parseRemoveAppTx(tx *rpcTx, method *abi.Method) (*PushEvent, e
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    eventS,
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        eventS,
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -640,11 +685,16 @@ func (ec *Client) parseAddChainTx(tx *rpcTx, method *abi.Method) (*PushEvent, er
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseAddChainTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	eventS := ec.parseTxEventStatus(tx, r)
@@ -679,11 +729,12 @@ func (ec *Client) parseAddChainTx(tx *rpcTx, method *abi.Method) (*PushEvent, er
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    eventS,
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        eventS,
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -698,19 +749,25 @@ func (ec *Client) parseChangeVoterTx(tx *rpcTx, method *abi.Method) (*PushEvent,
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseChangeVoterTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    ec.parseTxEventStatus(tx, r),
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -725,19 +782,25 @@ func (ec *Client) parseAddVoterTx(tx *rpcTx, method *abi.Method) (*PushEvent, er
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseAddVoterTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    ec.parseTxEventStatus(tx, r),
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -752,19 +815,25 @@ func (ec *Client) parseRemoveVoterTx(tx *rpcTx, method *abi.Method) (*PushEvent,
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseRemoveVoterTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    ec.parseTxEventStatus(tx, r),
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -779,19 +848,25 @@ func (ec *Client) parseChangeGatewayTx(tx *rpcTx, method *abi.Method) (*PushEven
 		return nil, err
 	}
 
-	ctx := ensureContext(nil)
-	r, err := ec.TransactionReceipt(ctx, *tx.TxHash)
-	if err != nil {
-		ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
-		return nil, err
+	var r *types.Receipt
+	var confirmations int64 = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
 	}
 
 	return &PushEvent{
-		Operation: new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
-		Tx:        createTxInfo(tx, r),
-		Method:    method.Name,
-		Events:    ec.parseTxEventStatus(tx, r),
-		ExtraData: &extraData,
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
 	}, nil
 
 }
@@ -875,7 +950,12 @@ func (ec *Client) pushTranxEvent(tranxes *[]*rpcTx, startIx int, eventCh chan<- 
 
 		event, err := ec.parseRpcTx(tx)
 		if err == nil {
-			eventCh <- event
+			select {
+			case eventCh <- event:
+				ewLogger.Debug("ethwatcher event pushed", "method", event.Method, "events", event.Events, "txHash", event.Tx.TxHash.Hex())
+			}
+		} else {
+			ewLogger.Warn("ethwatcher PushEvent error", "txHash", tx.TxHash.Hex(), "error", err.Error())
 		}
 	}
 }
@@ -891,10 +971,10 @@ func (ec *Client) StartWatch(start big.Int, tranxIx int, eventCh chan<- *PushEve
 		for {
 			select {
 			case blkHeight := <-blkCh:
-				// ewLogger.Info("ethwatcher watched block", "height", blkHeight.Uint64())
+				ewLogger.Debug("ethwatcher watched block", "height", blkHeight.Uint64())
 				blockInfo, err := ec.BlockByNumber(ctx, blkHeight)
 				if err != nil {
-					ewLogger.Error("ethwatcher StartWatch, get block info error", "error", err.Error())
+					ewLogger.Error("ethwatcher StartWatch, get block info error", "height", blkHeight.Uint64(), "error", err.Error())
 					break
 				}
 				if blkHeight.Cmp(&start) > 0 {
@@ -1180,8 +1260,8 @@ func (ec *Client) doSendTxByInput(input []byte, opts *bind.TransactOpts) (sTxHas
 		ewLogger.Error("ethwatcher send tx, retrieve account nonce error!", "error", err.Error())
 		return "", err
 	}
-	tNonce := time.Now()
-	ewLogger.Debug("ethwatcher send tx, nonce cost", "cost", tNonce.Sub(tStart))
+	// tNonce := time.Now()
+	// ewLogger.Debug("ethwatcher send tx, nonce cost", "cost", tNonce.Sub(tStart))
 
 	addrTable := ethdb.NewTable(ec.ldb, fromAddr.Hex())
 	defer func() {
@@ -1248,16 +1328,8 @@ func (ec *Client) doSendTxByInput(input []byte, opts *bind.TransactOpts) (sTxHas
 	var rawTx *types.Transaction
 	rawTx = types.NewTransaction(nonce, contractAddr, value, gasLimit, gasPrice, input)
 
-	curBlockNumber, err := ec.BlockNumber()
-	if err == nil {
-		inputHash := sha3.Sum256(input)
-		_, err := ec.ldb.Get(inputHash[:])
-		if err != nil {
-			ec.ldb.Put(inputHash[:], []byte(hexutil.EncodeUint64(curBlockNumber.Uint64()-20)))
-		}
-	}
-	tCreateTx := time.Now()
-	ewLogger.Debug("ethwatcher send tx, create tx cost", "cost", tCreateTx.Sub(tNonce))
+	// tCreateTx := time.Now()
+	// ewLogger.Debug("ethwatcher send tx, create tx cost", "cost", tCreateTx.Sub(tNonce))
 
 	signedTx, err := opts.Signer(types.HomesteadSigner{}, opts.From, rawTx)
 	if err != nil {
@@ -1268,8 +1340,9 @@ func (ec *Client) doSendTxByInput(input []byte, opts *bind.TransactOpts) (sTxHas
 		ewLogger.Error("ethwatcher send tx, broadcast tx error!", "nonce", nonce, "error", err.Error())
 		return "", err
 	}
-	tSendTx := time.Now()
-	ewLogger.Debug("ethwatcher send tx, broadcast tx cost", "cost", tSendTx.Sub(tCreateTx))
+
+	// tSendTx := time.Now()
+	// ewLogger.Debug("ethwatcher send tx, broadcast tx cost", "cost", tSendTx.Sub(tCreateTx))
 
 	addrTable.Put([]byte(hexutil.EncodeUint64(nonce)), signedTx.Hash().Bytes())
 
@@ -1284,69 +1357,9 @@ func (ec *Client) EncodeInput(method string, args ...interface{}) ([]byte, error
 	return voteAbi.Pack(method, args...)
 }
 
-// func (ec *Client) IsRealTx(s_hash string, gaslimit uint64) (status int) {
-// 	ctx := ensureContext(nil)
-// 	r, err := ec.TransactionReceipt(ctx, common.HexToHash(s_hash))
-//
-// 	if err != nil {
-// 		return -1 // get tx receipt failed
-//
-// 	} else if r == nil {
-// 		return TX_STATUS_PENDING // pending tx
-//
-// 	} else if r.Status == uint(0) {
-// 		return TX_STATUS_FAILED // tx excuted failed
-//
-// 	} else {
-// 		idMapName := make(map[string]string)
-//
-// 		for _, event := range voteAbi.Events {
-// 			idMapName[event.Id().Hex()] = event.Name
-// 		}
-//
-// 		status = VOTE_STATUS_OTHER
-// 		for _, txLog := range r.Logs {
-// 			logEventName := idMapName[txLog.Topics[0].Hex()]
-//
-// 			if logEventName == VOTE_EVENT_MINT {
-// 				status |= VOTE_TX_MINT // mint tx
-//
-// 			} else if logEventName == VOTE_EVENT_CONFIRM {
-// 				status |= VOTE_TX_MINT // confirm tx
-//
-// 			} else if logEventName == VOTE_EVENT_BURN {
-// 				status |= TOKEN_TX_BURN // burn token tx
-// 			}
-// 		}
-//
-// 		return status
-// 	}
-//
-// }
-
-// func (ec *Client) GetRpcTxByHash(s_hash string) (tx *rpcTx, err error) {
-// 	ctx := ensureContext(nil)
-//
-// 	err = ec.c.CallContext(ctx, &tx, "eth_getTransactionByHash", common.HexToHash(s_hash))
-// 	if err != nil {
-// 		ewLogger.Error("retrieve rpcTx error!", "error", err.Error())
-// 		return nil, err
-//
-// 	} else if tx == nil {
-// 		ewLogger.Error(fmt.Sprintf("tx not found with hash %v", s_hash))
-// 		return nil, fmt.Errorf("ethwatcher: tx not found!")
-// 	}
-// 	return tx, nil
-// }
-
 func (ec *Client) GetBlockNumber() int64 {
 	return new(big.Int).Sub(ec.currentHeight, ec.confirmHeight).Int64()
 }
-
-// func (ec *Client) GetTxByHash(s_hash string) (*PushEvent, error) {
-// 	return new(PushEvent), nil
-//
-// }
 
 // SubscribeNewHead subscribes to notifications about the current blockchain head
 // on the given channel.
