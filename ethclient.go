@@ -144,6 +144,8 @@ func (ec *Client) ReviewBlock(start big.Int, ch chan<- *big.Int) {
 	}
 	ec.currentHeight = cur
 
+	ewLogger.Debug("ethwatcher review block range", "from", start.Uint64(), "to", cur.Uint64())
+
 	curConfirm := new(big.Int).Sub(cur, ec.confirmHeight)
 	increaser := big.NewInt(1)
 	go func() {
@@ -152,6 +154,7 @@ func (ec *Client) ReviewBlock(start big.Int, ch chan<- *big.Int) {
 			case ch <- i:
 			}
 		}
+		close(ch)
 	}()
 }
 
@@ -164,31 +167,33 @@ func (ec *Client) StartWatchBlock(start big.Int, heightCh chan<- *big.Int) {
 	}
 	ec.ReviewBlock(start, rCh)
 	bigConfirmH := ec.confirmHeight
+	increaser := big.NewInt(1)
 	go func() {
 		defer sub.Unsubscribe()
+		for blockHeight := range rCh {
+			select {
+			case heightCh <- blockHeight:
+			}
+		}
 		for {
 			select {
-			case blockHeight := <-rCh:
-				select {
-				case heightCh <- blockHeight:
-				}
-			default:
-				select {
-				case blockHeight := <-rCh:
-					select {
-					case heightCh <- blockHeight:
-					}
-				case blockHeader := <-wCh:
-					bigIntNumber := (*big.Int)(blockHeader.Number)
-					if bigIntNumber.Cmp(ec.currentHeight) > 0 {
+			case blockHeader := <-wCh:
+				bigIntNumber := (*big.Int)(blockHeader.Number)
+				if bigIntNumber.Cmp(ec.currentHeight) > 0 {
+					startH := new(big.Int).Add(ec.currentHeight, increaser)
+					for i := startH; i.Cmp(bigIntNumber) <= 0; i = new(big.Int).Add(i, increaser) {
+						pushH := new(big.Int).Sub(i, bigConfirmH)
 						select {
-						case heightCh <- new(big.Int).Sub(bigIntNumber, bigConfirmH):
+						case heightCh <- pushH:
+							ewLogger.Debug("ethwatcher watched block", "height", pushH.Uint64())
 						}
-						ec.currentHeight = bigIntNumber
 					}
-				case err := <-sub.Err():
-					ewLogger.Error("ethwatcher watch block error", "error", err.Error())
+					ec.currentHeight = bigIntNumber
+				} else {
+					ewLogger.Warn("ethwatcher receive under current block", "height", bigIntNumber.Uint64(), "current", ec.currentHeight.Uint64())
 				}
+			case err := <-sub.Err():
+				ewLogger.Error("ethwatcher watch block error", "error", err.Error())
 			}
 		}
 	}()
@@ -971,7 +976,6 @@ func (ec *Client) StartWatch(start big.Int, tranxIx int, eventCh chan<- *PushEve
 		for {
 			select {
 			case blkHeight := <-blkCh:
-				ewLogger.Debug("ethwatcher watched block", "height", blkHeight.Uint64())
 				blockInfo, err := ec.BlockByNumber(ctx, blkHeight)
 				if err != nil {
 					ewLogger.Error("ethwatcher StartWatch, get block info error", "height", blkHeight.Uint64(), "error", err.Error())
