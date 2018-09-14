@@ -1647,20 +1647,18 @@ func createTxInfo(tx *rpcTx, r *types.Receipt) *TxInfo {
 		BlockNumber: (*big.Int)(tx.BlockNumber),
 		BlockHash:   tx.BlockHash,
 
-		TxHash:  tx.TxHash,
-		TxIndex: int(*tx.TxIndex),
+		TxHash: tx.TxHash,
 
 		From: tx.CallFrom,
 		To:   tx.CallTo,
-
-		// Status: r.Status,
-		// Fee: new(big.Int).Mul((*big.Int)(tx.GasPrice), new(big.Int).SetUint64(r.GasUsed)),
-
 	}
+
 	if r != nil {
+		txInfo.TxIndex = int(*tx.TxIndex)
 		txInfo.Status = r.Status
 		txInfo.Fee = new(big.Int).Mul((*big.Int)(tx.GasPrice), new(big.Int).SetUint64(r.GasUsed))
 	}
+
 	return txInfo
 }
 
