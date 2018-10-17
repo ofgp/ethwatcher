@@ -176,6 +176,7 @@ func (ec *Client) StartWatchBlock(start big.Int, heightCh chan<- *big.Int) {
 			}
 		}
 		for {
+		Loop:
 			select {
 			case blockHeader := <-wCh:
 				bigIntNumber := (*big.Int)(blockHeader.Number)
@@ -194,6 +195,26 @@ func (ec *Client) StartWatchBlock(start big.Int, heightCh chan<- *big.Int) {
 				}
 			case err := <-sub.Err():
 				ewLogger.Error("ethwatcher watch block error", "error", err.Error())
+
+				reConnectTimes := 1
+				tiker := time.NewTicker(time.Second * 10)
+				for {
+					select {
+					case <-tiker.C:
+						// <-time.After(time.Second * 30)
+						sub, err = ec.SubscribeNewHead(ensureContext(nil), wCh)
+						if err == nil {
+							ewLogger.Info("ethwatcher reconnected!")
+							tiker.Stop()
+							tiker = nil
+							goto Loop
+
+						} else {
+							ewLogger.Error("ethwatcher reconnect error", "error", err, "tryTimes", reConnectTimes)
+							reConnectTimes += 1
+						}
+					}
+				}
 			}
 		}
 	}()
