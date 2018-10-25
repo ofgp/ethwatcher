@@ -314,7 +314,7 @@ func (ec *Client) parseTxEventStatus(tx *rpcTx, r *types.Receipt) uint64 {
 	if r == nil {
 		eventStatus |= TX_STATUS_PENDING // pending tx
 
-	} else if r.Status == uint(0) {
+	} else if r.Status == uint64(0) {
 		eventStatus |= TX_STATUS_FAILED // tx excuted failed
 
 	} else {

@@ -15,7 +15,7 @@ type TxInfo struct {
 	From *common.Address // tx sender
 	To   *common.Address // tx receiver
 
-	Status uint // result status for this tx. 1 > success; 0 > failed
+	Status uint64 // result status for this tx. 1 > success; 0 > failed
 
 	Fee *big.Int
 }

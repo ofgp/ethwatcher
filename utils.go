@@ -26,7 +26,12 @@ func GetAddressFromPub(sPub string) (common.Address, []byte, error) {
 	if err != nil {
 		return common.Address{}, bPub, err
 	}
-	pubKey := crypto.ToECDSAPub(bPub)
+
+	pubKey, err := crypto.UnmarshalPubkey(bPub)
+	if err != nil {
+		return common.Address{}, bPub, err
+	}
+
 	return crypto.PubkeyToAddress(*pubKey), bPub, nil
 }
 
