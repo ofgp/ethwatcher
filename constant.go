@@ -19,6 +19,7 @@ const (
 	VOTER_TX_REVOKE                    // 2**14 16384
 	TOKEN_TX_BURN                      // 2**15 32768
 	VOTE_TX_RECVETHER                  //2**16 65536
+	VOTE_TX_SENDETHER                  //2**17 131072
 )
 
 const (
@@ -65,4 +66,5 @@ const (
 	VOTE_EVENT_APPREMOVED    = "AppRemoved"
 	VOTE_EVENT_CHANGEGATEWAY = "GatewayAddrChanged"
 	VOTE_EVENT_RECVETHER     = "RecvEther"
+	VOTE_EVENT_SENDETHER     = "SendEther"
 )

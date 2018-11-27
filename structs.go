@@ -124,3 +124,10 @@ type ExtraEther struct {
 	From   string
 	To     string
 }
+
+// ExtraSendEther eth 转账
+type ExtraSendEther struct {
+	Receiver string // 接收eth地址
+	Amount   uint64 //接收金额
+	Proposal string //原始兑换交易txhash
+}
