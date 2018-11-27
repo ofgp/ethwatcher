@@ -946,7 +946,7 @@ func (ec *Client) parseRecvEtherTx(tx *rpcTx, method *abi.Method) (*PushEvent, e
 }
 
 func (ec *Client) parseSendEtherTx(tx *rpcTx, method *abi.Method) (*PushEvent, error) {
-
+	ewLogger.Info("get sendether", "hash", tx.TxHash.Hex())
 	var extraData ExtraSendEther
 
 	err := method.Inputs.Unpack(&extraData, []byte(*tx.Payload)[4:])
