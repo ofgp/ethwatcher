@@ -18,6 +18,8 @@ const (
 	VOTE_TX_GATEWAYCHANGED             // 2**13 8192  change the gatewayAddr of an app
 	VOTER_TX_REVOKE                    // 2**14 16384
 	TOKEN_TX_BURN                      // 2**15 32768
+	VOTE_TX_RECVETHER                  //2**16 65536
+	VOTE_TX_SENDETHER                  //2**17 131072
 )
 
 const (
@@ -44,6 +46,8 @@ const (
 	VOTE_METHOD_ADDAPP        = "addApp"
 	VOTE_METHOD_REMOVEAPP     = "removeApp"
 	VOTE_METHOD_CHANGEGATEWAY = "changeGatewayAddr"
+	VOTE_METHOD_RECVETHER     = "recvEther"
+	VOTE_METHOD_SENDETHER     = "sendEther"
 
 	TOKEN_METHOD_BURN = "burn"
 
@@ -61,4 +65,6 @@ const (
 	VOTE_EVENT_APPADDED      = "AppAdded"
 	VOTE_EVENT_APPREMOVED    = "AppRemoved"
 	VOTE_EVENT_CHANGEGATEWAY = "GatewayAddrChanged"
+	VOTE_EVENT_RECVETHER     = "RecvEther"
+	VOTE_EVENT_SENDETHER     = "SendEther"
 )

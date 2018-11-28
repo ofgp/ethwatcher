@@ -18,10 +18,8 @@
 package ethwatcher
 
 import (
-	"context"
-	// "encoding/hex"
-	"encoding/json"
-	// "errors"
+	"context"       // "encoding/hex"
+	"encoding/json" // "errors"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -35,10 +33,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	// "github.com/ethereum/go-ethereum/crypto/sha3"
-	"github.com/ethereum/go-ethereum/ethdb"
-	// "github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/crypto" // "github.com/ethereum/go-ethereum/crypto/sha3"
+	"github.com/ethereum/go-ethereum/ethdb"  // "github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/spf13/viper"
@@ -380,6 +376,11 @@ func (ec *Client) parseTxEventStatus(tx *rpcTx, r *types.Receipt) uint64 {
 			// VOTE_EVENT_CHANGEGATEWAY = "GatewayAddrChanged"
 			case VOTE_EVENT_CHANGEGATEWAY:
 				eventStatus |= VOTE_TX_GATEWAYCHANGED
+			// VOTE_EVENT_CHANGEGATEWAY = "RecvEther"
+			case VOTE_EVENT_RECVETHER:
+				eventStatus |= VOTE_TX_RECVETHER
+			case VOTE_EVENT_SENDETHER:
+				eventStatus |= VOTE_TX_SENDETHER
 			}
 		}
 	}
@@ -897,6 +898,86 @@ func (ec *Client) parseChangeGatewayTx(tx *rpcTx, method *abi.Method) (*PushEven
 
 }
 
+type recvEtherArg struct {
+	TargetChain string
+	TargetAddr  string
+}
+
+func (ec *Client) parseRecvEtherTx(tx *rpcTx, method *abi.Method) (*PushEvent, error) {
+	ewLogger.Info("get recvether", "hash", tx.TxHash.Hex())
+	var args recvEtherArg
+	err := method.Inputs.Unpack(&args, []byte(*tx.Payload)[4:])
+	if err != nil {
+		ewLogger.Error("ethwatcher parseBurnTx, Unpack input error!", "hash", tx.TxHash.Hex(), "error", err.Error())
+		return nil, err
+	}
+
+	var r *types.Receipt
+	var confirmations = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
+	}
+
+	var extraData ExtraEther
+	extraData.ScTxid = tx.TxHash.Hex()
+	extraData.From = CHAIN_SELF_ETH
+	extraData.To = args.TargetChain
+	if tx.EthAmount == nil {
+		ewLogger.Error("get eth amount err", "hash", tx.TxHash.Hex())
+		panic("amount err")
+	}
+	extraData.Amount = tx.EthAmount.ToInt().Uint64()
+	extraData.Addr = args.TargetAddr
+	return &PushEvent{
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
+	}, nil
+
+}
+
+func (ec *Client) parseSendEtherTx(tx *rpcTx, method *abi.Method) (*PushEvent, error) {
+	ewLogger.Info("get sendether", "hash", tx.TxHash.Hex())
+	var extraData ExtraSendEther
+
+	err := method.Inputs.Unpack(&extraData, []byte(*tx.Payload)[4:])
+	if err != nil {
+		ewLogger.Error("ethwatcher parseMintTx, Unpack input error!", "hash", tx.TxHash.Hex(), "error", err.Error())
+		return nil, err
+	}
+
+	var r *types.Receipt
+	var confirmations = int64(0)
+	if tx.BlockNumber != nil {
+		ctx := ensureContext(nil)
+		r, err = ec.TransactionReceipt(ctx, *tx.TxHash)
+		if err != nil {
+			ewLogger.Error("ethwatcher parseChangeGatewayTx, get tx receipt error", "hash", tx.TxHash.Hex(), "error", err.Error())
+			return nil, err
+		}
+		confirmations = new(big.Int).Sub(ec.currentHeight, (*big.Int)(tx.BlockNumber)).Int64()
+	}
+
+	return &PushEvent{
+		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
+		Tx:            createTxInfo(tx, r),
+		Confirmations: confirmations,
+		Method:        method.Name,
+		Events:        ec.parseTxEventStatus(tx, r),
+		ExtraData:     &extraData,
+	}, nil
+
+}
+
 func (ec *Client) parseRpcTx(tx *rpcTx) (*PushEvent, error) {
 	method, err := voteAbi.MethodById([]byte(*tx.Payload)[:4])
 	if err != nil {
@@ -940,7 +1021,10 @@ func (ec *Client) parseRpcTx(tx *rpcTx) (*PushEvent, error) {
 
 	case VOTE_METHOD_CHANGEGATEWAY:
 		return ec.parseChangeGatewayTx(tx, method)
-
+	case VOTE_METHOD_RECVETHER:
+		return ec.parseRecvEtherTx(tx, method)
+	case VOTE_METHOD_SENDETHER:
+		return ec.parseSendEtherTx(tx, method)
 	default:
 		ewLogger.Warn("ethwatcher uncatched input method", "method", method.Name)
 		return nil, fmt.Errorf("ethwatcher uncatched input method")

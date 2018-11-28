@@ -1,8 +1,9 @@
 package ethwatcher
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type TxInfo struct {
@@ -112,4 +113,21 @@ type AppInfo struct {
 	TokenCode uint32
 	Addr      common.Address
 	Chain     string
+}
+
+//ExtraEther 作为侧链接收eth
+type ExtraEther struct {
+	Chain  string //目标链
+	Addr   string //就收地址
+	Amount uint64 //接收金额
+	ScTxid string //txid
+	From   string
+	To     string
+}
+
+// ExtraSendEther eth 转账
+type ExtraSendEther struct {
+	Receiver common.Address // 接收eth地址
+	Amount   uint64         //接收金额
+	Proposal string         //原始兑换交易txhash
 }
