@@ -117,10 +117,10 @@ type AppInfo struct {
 
 //ExtraEther 作为侧链接收eth
 type ExtraEther struct {
-	Chain  string //目标链
-	Addr   string //就收地址
-	Amount uint64 //接收金额
-	ScTxid string //txid
+	Chain  string   //目标链
+	Addr   string   //就收地址
+	Amount *big.Int //接收金额
+	ScTxid string   //txid
 	From   string
 	To     string
 }

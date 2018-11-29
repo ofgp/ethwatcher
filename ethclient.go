@@ -932,7 +932,7 @@ func (ec *Client) parseRecvEtherTx(tx *rpcTx, method *abi.Method) (*PushEvent, e
 		ewLogger.Error("get eth amount err", "hash", tx.TxHash.Hex())
 		panic("amount err")
 	}
-	extraData.Amount = tx.EthAmount.ToInt().Uint64()
+	extraData.Amount = tx.EthAmount.ToInt()
 	extraData.Addr = args.TargetAddr
 	return &PushEvent{
 		Operation:     new(big.Int).SetBytes(crypto.Keccak256(*tx.Payload)),
